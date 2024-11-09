@@ -23,8 +23,10 @@
     "typescript": "^5.6.3"
   },
   "dependencies": {
+    "@types/cookie": "^1.0.0",
     "@types/cookie-parser": "^1.4.7",
     "@types/cors": "^2.8.17",
+    "cookie": "^1.0.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "express": "^4.21.1",
