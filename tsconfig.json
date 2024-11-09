@@ -7,8 +7,16 @@
     "rootDir": "./src",
     "outDir": "./dist",
     "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true,  
+    "resolveJsonModule": true, 
+    "forceConsistentCasingInFileNames": true,
+    "moduleResolution": "node",   
     "strict": true,
-    "skipLibCheck": true                               /* Skip type checking all .d.ts files. */
-  }
+    "skipLibCheck": true,
+    "baseUrl": ".",             // Базовая папка для импортов
+    "paths": {
+      "*": ["node_modules/*"]
+    }                               /* Skip type checking all .d.ts files. */
+  },
+  "include": ["src/**/*.ts"], // Убедитесь, что здесь указаны ваши файлы
+  "exclude": ["node_modules"]
 }

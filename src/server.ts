@@ -3,6 +3,8 @@ import jwt, { JwtPayload, VerifyErrors } from 'jsonwebtoken';
 import express, { Request, Response, Express, NextFunction } from 'express';
 import { EStatuses, ITask, IUser } from './data';
 import cors from 'cors';
+import http from 'http';
+import { ExtendedError, Server, Socket } from 'socket.io';
 
 import cookieParser from 'cookie-parser';
 
@@ -18,70 +20,14 @@ export const SECRET_KEY = 'ASDK-12AD-KDASLS';
 
 export let users: Array<IUser> = [];
 
-let tasks: Array<ITask> = [
-  {
-    id: 1,
-    title: 'Task 1',
-    deadline: '2024-10-31',
-    status: EStatuses.InProgress,
-  },
-  {
-    id: 2,
-    title: 'Task 2',
-    deadline: '2024-11-01',
-    status: EStatuses.Deadline,
-  },
-  {
-    id: 3,
-    title: 'Task 3',
-    deadline: '2024-11-02',
-    status: EStatuses.Complete,
-  },
-  {
-    id: 4,
-    title: 'Task 4',
-    deadline: '2024-11-03',
-    status: EStatuses.InProgress,
-  },
-  {
-    id: 5,
-    title: 'Task 5',
-    deadline: '2024-11-04',
-    status: EStatuses.Complete,
-  },
-  {
-    id: 6,
-    title: 'Task 6',
-    deadline: '2024-11-05',
-    status: EStatuses.InProgress,
-  },
-  {
-    id: 7,
-    title: 'Task 7',
-    deadline: '2024-11-06',
-    status: EStatuses.Deadline,
-  },
-  {
-    id: 8,
-    title: 'Task 8',
-    deadline: '2024-11-07',
-    status: EStatuses.Complete,
-  },
-  {
-    id: 9,
-    title: 'Task 9',
-    deadline: '2024-11-08',
-    status: EStatuses.InProgress,
-  },
-  {
-    id: 10,
-    title: 'Task 10',
-    deadline: '2024-11-09',
-    status: EStatuses.Complete,
-  },
-];
-
 const app: Express = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+  cors: {
+    origin: 'http://localhost:5173',
+    credentials: true,
+  },
+});
 
 const port = 3000;
 app.use(express.json());
@@ -100,6 +46,29 @@ app.use((req, res, next) => {
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   next();
 });
+
+const authenticateSocket = (
+  socket: Socket,
+  next: (err?: ExtendedError) => void
+) => {
+  const token = socket.handshake.auth.token;
+
+  if (token) {
+    jwt.verify(token, SECRET_KEY, (err: any, decoded: any) => {
+      if (err || !decoded) return next(new Error('Authentication error'));
+
+      const user = users.find((u) => u.id === (decoded as JwtPayload)?.id);
+      if (!user) {
+        return next(new Error('User not found'));
+      }
+
+      socket.data.user = user; // Сохраняем пользователя в socket.data
+      next();
+    });
+  } else {
+    next(new Error('No token provided'));
+  }
+};
 
 const authenticateToken = (
   req: Request,
@@ -129,59 +98,48 @@ const authenticateToken = (
   });
 };
 
-app.get('/tasks', authenticateToken, (req: Request, res: Response) => {
-  const user = users.find((u) => u.id === req.user!.id);
-  if (!user) res.status(404).json({ error: 'User not found' });
-  else {
-    res.status(200).json(user.tasks);
-  }
-});
+// io.use(authenticateSocket);
 
-app.post('/tasks', authenticateToken, (req: Request, res: Response) => {
-  const user = users.find((u) => u.id === req.user!.id);
-  if (!user) res.status(404).json({ error: 'User not found' });
-  else {
-    const newTask: Omit<ITask, 'id'> = req.body;
-    const task: ITask = {
-      ...newTask,
-      id: user.tasks.at(-1)?.id === undefined ? 0 : user.tasks.at(-1)!.id + 1,
+io.on('connection', (socket: Socket) => {
+  console.log('A user connected:', (socket as any).user);
+  const user = socket.user as IUser;
+  socket.on('getTasks', () => {
+    socket.emit('tasksData', user.tasks);
+  });
+
+  socket.on('addTask', (taskData: Omit<ITask, 'id'>) => {
+    const newTask: ITask = {
+      ...taskData,
+      id: user.tasks.length > 0 ? user.tasks[user.tasks.length - 1].id + 1 : 1,
     };
-    user.tasks.push(task);
-    res.status(201).json(task);
-  }
-});
+    user.tasks.push(newTask);
+    io.to(socket.id).emit('taskAdded', newTask);
+  });
 
-app.put('/tasks/:id', authenticateToken, (req: Request, res: Response) => {
-  const user = users.find((u) => u.id === req.user!.id);
-  if (!user) res.status(404).json({ error: 'User not found' });
-  else {
-    const taskId = parseInt(req.params.id);
-    const updatedTask: Partial<ITask> = req.body;
-    const taskIndex = user.tasks.findIndex((task) => task.id === taskId);
-
-    if (taskIndex === -1) {
-      res.status(404).json({ error: 'Task not found' });
-    } else {
+  socket.on('updateTask', (updatedTask: Partial<ITask> & { id: number }) => {
+    const taskIndex = user.tasks.findIndex(
+      (task) => task.id === updatedTask.id,
+    );
+    if (taskIndex !== -1) {
       user.tasks[taskIndex] = { ...user.tasks[taskIndex], ...updatedTask };
-      res.json(user.tasks[taskIndex]);
-    }
-  }
-});
-
-app.delete('/tasks/:id', authenticateToken, (req: Request, res: Response) => {
-  const user = users.find((u) => u.id === req.user!.id);
-  if (!user) res.status(404).json({ error: 'User not found' });
-  else {
-    const taskId = parseInt(req.params.id);
-    const taskIndex = user.tasks.findIndex((task) => task.id === taskId);
-
-    if (taskIndex === -1) {
-      res.status(404).json({ error: 'Task not found' });
+      io.to(socket.id).emit('taskUpdated', user.tasks[taskIndex]);
     } else {
-      const deletedTask = user.tasks.splice(taskIndex, 1)[0];
-      res.status(201).json(deletedTask);
+      socket.emit('error', { error: 'Task not found' });
     }
-  }
+  });
+
+  socket.on('deleteTask', (taskId: number) => {
+    const taskIndex = user.tasks.findIndex((task) => task.id === taskId);
+    if (taskIndex !== -1) {
+      const [deletedTask] = user.tasks.splice(taskIndex, 1);
+      io.to(socket.id).emit('taskDeleted', deletedTask);
+    } else {
+      socket.emit('error', { error: 'Task not found' });
+    }
+  });
+  socket.on('disconnect', () => {
+    console.log('User disconnected');
+  });
 });
 
 app.post('/register', async (req: Request, res: Response) => {
@@ -255,7 +213,7 @@ app.post('/logout', (req: Request, res: Response) => {
 });
 
 // Start the server and listen on the specified port
-app.listen(port, () => {
+server.listen(port, () => {
   // Log a message when the server is successfully running
   console.log(`Server is running on http://localhost:${port}`);
 });
