@@ -10,3 +10,11 @@ export enum EStatuses {
     Deadline = "Deadline",
     Complete = "Complete"
 }
+
+export interface IUser {
+    id: number;
+    username: string;
+    email: string;
+    password: string;
+    tasks: Array<ITask>;
+}
