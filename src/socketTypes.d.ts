@@ -5,3 +5,4 @@ declare module 'socket.io' {
     user?: IUser;
   }
 }
+
